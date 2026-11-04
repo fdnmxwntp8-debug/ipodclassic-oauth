@@ -1,0 +1,48 @@
+name: PodTransfer - Unsigned IPA
+on:
+  push:
+    branches:
+      - podtransfer-build-20261104
+    paths:
+      - podtransfer-build-source.b64
+      - .github/workflows/podtransfer-ipa.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Extract PodTransfer source
+        run: |
+          mkdir -p PodTransfer
+          base64 -D < podtransfer-build-source.b64 | tar -xz -C PodTransfer
+          test -f PodTransfer/project.yml
+      - name: Generate Xcode project
+        working-directory: PodTransfer
+        run: xcodegen generate
+      - name: Build iPhone app (unsigned)
+        working-directory: PodTransfer
+        run: |
+          xcodebuild -project PodTransfer.xcodeproj -scheme PodTransfer \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/PodTransferBuild" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            clean build
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/PodTransferBuild/Build/Products/Release-iphoneos/PodTransfer.app" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qry "$GITHUB_WORKSPACE/PodTransfer-unsigned.ipa" Payload
+          unzip -t "$GITHUB_WORKSPACE/PodTransfer-unsigned.ipa" | tail -1
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PodTransfer-unsigned-IPA
+          path: PodTransfer-unsigned.ipa
+          retention-days: 30
